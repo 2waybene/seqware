@@ -18,14 +18,17 @@ package com.github.seqware.queryengine.plugins.plugins;
 
 import com.github.seqware.queryengine.model.Feature;
 import com.github.seqware.queryengine.plugins.MapReducePlugin;
-import com.github.seqware.queryengine.plugins.MapReducePlugin;
 import com.github.seqware.queryengine.plugins.MapperInterface;
-import com.github.seqware.queryengine.plugins.MapperInterface;
-import com.github.seqware.queryengine.plugins.ReducerInterface;
 import com.github.seqware.queryengine.plugins.ReducerInterface;
 import com.github.seqware.queryengine.system.exporters.VCFDumper;
 import java.io.File;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.ObjectStreamException;
+import java.io.Serializable;
 import java.util.Collection;
+import org.apache.commons.lang.SerializationUtils;
 import org.apache.hadoop.io.Text;
 
 /**
@@ -36,11 +39,11 @@ import org.apache.hadoop.io.Text;
  * @author dyuen
  * @version $Id: $Id
  */
-public class VCFDumperPlugin extends MapReducePlugin<Text, Text, Text, Text, Text, Text, File> {
+public class VCFDumperPlugin extends MapReducePlugin<Text, Text, Text, Text, Text, Text, File> implements Serializable {
 
     private Text text = new Text();
     private Text textKey = new Text();
-
+    
     @Override
     public Class getMapOutputKeyClass() {
         return Text.class;
@@ -90,5 +93,27 @@ public class VCFDumperPlugin extends MapReducePlugin<Text, Text, Text, Text, Tex
     @Override
     public Class<?> getResultClass() {
         return File.class;
+    }
+    
+    private void readObject(java.io.ObjectInputStream in) throws IOException{
+        if (text == null){
+            text = new Text();
+        }
+        if (textKey == null){
+            textKey = new Text();
+        }
+        text.readFields(in);
+        textKey.readFields(in);
+    }
+    
+    private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+        text.write(out);
+        textKey.write(out);
+    }
+    
+    public static void main (String[] args){
+        VCFDumperPlugin plugin = new VCFDumperPlugin();
+        byte[] bytes = SerializationUtils.serialize(plugin);
+        VCFDumperPlugin plugin2 = (VCFDumperPlugin) SerializationUtils.deserialize(bytes);
     }
 }

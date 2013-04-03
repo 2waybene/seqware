@@ -46,13 +46,16 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
+import net.sourceforge.seqware.common.util.Log;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.SerializationUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileContext;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
@@ -197,10 +200,14 @@ public final class MRHBasePluginRunner<ReturnType> implements PluginRunnerInterf
             } else if (mapReducePlugin.getResultMechanism() == PluginInterface.ResultMechanism.BATCHEDFEATURESET) {
                 FeatureSet build = updateAndGet(outputSet);
                 return (ReturnType) build;
-            } else {
+            } else if (mapReducePlugin.getResultMechanism() == PluginInterface.ResultMechanism.FILE){
+                Path outputPath = TextOutputFormat.getOutputPath(job);
+                Log.info("Detected ReturnType as " + outputPath.getName());
+                FileSystem fileSystem = outputPath.getFileSystem(this.job.getConfiguration());       
+                File handleFileResult = this.handleFileResult(outputPath, fileSystem);
+                return (ReturnType)handleFileResult;
+            }else {
                 throw new UnsupportedOperationException();
-
-
             }
         } catch (IOException ex) {
             Logger.getLogger(MRHBasePluginRunner.class
@@ -408,20 +415,18 @@ public final class MRHBasePluginRunner<ReturnType> implements PluginRunnerInterf
         }
     }
 
-    public File handleFileResult(Path path) {
-        FileSystem fs = null;
+    public File handleFileResult(Path path, FileSystem filesystem) {
         try {
             Path outputPartPath = new Path(path, "part-r-00000");
             // copy file from HDFS to local temporary file
             Logger
                     .getLogger(FeaturesByFilterPlugin.class
-                    .getName()).info("Source file is " + outputPartPath.toString());
+                    .getName()).info("Source file is " + outputPartPath.getName());
             Configuration conf = new Configuration();
 
             HBaseStorage.configureHBaseConfig(conf);
 
             HBaseConfiguration.addHbaseResources(conf);
-            fs = FileSystem.get(conf);
             File createTempFile = File.createTempFile("vcf", "out");
 
             createTempFile.delete();
@@ -430,11 +435,11 @@ public final class MRHBasePluginRunner<ReturnType> implements PluginRunnerInterf
 
             Logger.getLogger(FeaturesByFilterPlugin.class
                     .getName()).info("Destination file is " + outPath.toString());
-            if (!fs.exists(outputPartPath)) {
+            if (!filesystem.exists(outputPartPath)) {
                 Logger.getLogger(FeaturesByFilterPlugin.class.getName()).fatal("Input file not found");
             }
 
-            if (!fs.isFile(outputPartPath)) {
+            if (!filesystem.isFile(outputPartPath)) {
                 Logger.getLogger(FeaturesByFilterPlugin.class.getName()).fatal("Input should be a file");
             }
 
@@ -443,15 +448,22 @@ public final class MRHBasePluginRunner<ReturnType> implements PluginRunnerInterf
             }
             // doesn't quite work yet, no time to finish before poster, check results manually on hdfs
 
-            FileUtil.copy(fs, outputPartPath, localSystem, outPath,
-                    true, true, conf);
+            filesystem.copyToLocalFile(outputPartPath, path);
+            //FileUtil.copy(fs, outputPartPath, localSystem, outPath,
+            //        true, true, conf);
             return new File(outPath.toUri());
         } catch (IOException ex) {
             Logger.getLogger(VCFDumperPlugin.class.getName()).fatal(null, ex);
         } finally {
-            if (fs != null) {
+            if (filesystem != null) {
                 try {
-                    fs.delete(path, true);
+                    // clearing
+                    RemoteIterator<LocatedFileStatus> listFiles = filesystem.listFiles(path, true);
+                    while(listFiles.hasNext()){
+                        LocatedFileStatus next = listFiles.next();
+                        Log.info("Removing files including : " + next.getPath().toUri().toString());
+                    }
+                    filesystem.delete(path, true);
                 } catch (IOException ex) {
                     Logger.getLogger(VCFDumperPlugin.class.getName()).warn("IOException when clearing after text output", ex);
                 }

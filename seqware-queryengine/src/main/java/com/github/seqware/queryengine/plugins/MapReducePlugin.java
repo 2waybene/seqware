@@ -5,6 +5,7 @@ import com.github.seqware.queryengine.model.FeatureSet;
 import com.github.seqware.queryengine.util.SGID;
 import java.util.Collection;
 import org.apache.commons.lang.SerializationUtils;
+import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 
 /**
  * An abstracted map-reduce interface. These interfaces will eventually restrict
@@ -184,7 +185,7 @@ public abstract class MapReducePlugin<MAPKEYOUT, MAPVALUEOUT, REDUCEKEYIN, REDUC
 
     @Override
     public Class<?> getOutputClass() {
-        return null;
+        return NullOutputFormat.class;
     }
 
     public int getNumReduceTasks() {
